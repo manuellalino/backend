@@ -1,119 +1,40 @@
 const express = require('express');
 const router = express.Router();
-const mysql = require("../mysql").pool;
-const updateStatement = require("./updateStatement");
+const { Entrada } = require('../models');
+const asyncHandler = require('./asyncHandler');
+const campos = ['id_produto', 'id_fornecedor', 'quantidade', 'valor_unitario', 'data_entrada', 'observacao'];
 
-// LISTAR ENTRADAS
-router.get('/', (req, res) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
+router.get('/', asyncHandler(async (req, res) => {
+    const resultado = await Entrada.findAll({ raw: true });
+    res.status(200).send({ entrada: resultado });
+}));
 
-        conn.query("SELECT * FROM entradas", (error, resultado) => {
-            conn.release();
+router.get('/:id', asyncHandler(async (req, res) => {
+    const resultado = await Entrada.findAll({ where: { id_entrada: req.params.id }, raw: true });
+    res.status(200).send({ entrada: resultado });
+}));
 
-            if (error) return res.status(500).send({ error });
+router.post('/', asyncHandler(async (req, res) => {
+    const entrada = await Entrada.create(Object.fromEntries(
+        campos.map(campo => [campo, req.body[campo] === undefined ? null : req.body[campo]])
+    ));
+    res.status(201).send({ mensagem: "Entrada criada com sucesso!", id_entrada: entrada.id_entrada });
+}));
 
-            res.status(200).send({ entrada: resultado });
-        });
-    });
-});
+router.patch('/:id', asyncHandler(async (req, res) => {
+    const values = Object.fromEntries(campos
+        .filter(campo => Object.prototype.hasOwnProperty.call(req.body, campo))
+        .map(campo => [campo, req.body[campo]]));
+    if (Object.keys(values).length === 0) {
+        return res.status(400).send({ mensagem: "Informe ao menos um campo válido para atualização." });
+    }
+    await Entrada.update(values, { where: { id_entrada: req.params.id } });
+    res.status(202).send({ mensagem: "Entrada atualizada com sucesso!" });
+}));
 
-// BUSCAR ENTRADA POR ID
-router.get('/:id', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error: error });
-
-        conn.query(
-            "SELECT * FROM entradas WHERE id_entrada = ?",
-            [req.params.id],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error: error });
-
-                res.status(200).send({ entrada: resultado });
-            }
-        );
-    });
-});
-
-// CADASTRAR ENTRADA
-router.post('/', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(
-            "INSERT INTO entradas (id_produto, id_fornecedor, quantidade, valor_unitario, data_entrada, observacao) VALUES (?, ?, ?, ?, ?, ?)",
-
-            [
-                req.body.id_produto,
-                req.body.id_fornecedor,
-                req.body.quantidade,
-                req.body.valor_unitario,
-                req.body.data_entrada,
-                req.body.observacao
-            ],
-
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(201).send({
-                    mensagem: "Entrada criada com sucesso!",
-                    id_entrada: resultado.insertId
-                });
-            }
-        );
-    });
-});
-
-// ATUALIZAR ENTRADA
-router.patch('/:id', (req, res, next) => {
-    const update = updateStatement(
-        'entradas',
-        'id_entrada',
-        ['id_produto', 'id_fornecedor', 'quantidade', 'valor_unitario', 'data_entrada', 'observacao'],
-        req.body,
-        req.params.id
-    );
-    if (!update) return res.status(400).send({ mensagem: "Informe ao menos um campo válido para atualização." });
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(update.sql, update.values,
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(202).send({
-                    mensagem: "Entrada atualizada com sucesso!"
-                });
-            }
-        );
-    });
-});
-
-// REMOVER ENTRADA
-router.delete('/:id', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(
-            "DELETE FROM entradas WHERE id_entrada = ?",
-            [req.params.id],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(202).send({
-                    mensagem: "Entrada removida com sucesso!"
-                });
-            }
-        );
-    });
-});
+router.delete('/:id', asyncHandler(async (req, res) => {
+    await Entrada.destroy({ where: { id_entrada: req.params.id } });
+    res.status(202).send({ mensagem: "Entrada removida com sucesso!" });
+}));
 
 module.exports = router;

@@ -1,116 +1,40 @@
 const express = require('express');
 const router = express.Router();
-const mysql = require("../mysql").pool;
-const updateStatement = require("./updateStatement");
+const { Movimentacao } = require('../models');
+const asyncHandler = require('./asyncHandler');
+const campos = ['id_produto', 'tipo', 'quantidade', 'data_movimentacao', 'observacao'];
 
-// LISTAR MOVIMENTAÇÕES
-router.get('/', (req, res) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
+router.get('/', asyncHandler(async (req, res) => {
+    const resultado = await Movimentacao.findAll({ raw: true });
+    res.status(200).send({ movimentacao: resultado });
+}));
 
-        conn.query("SELECT * FROM movimentacoes", (error, resultado) => {
-            conn.release();
+router.get('/:id', asyncHandler(async (req, res) => {
+    const resultado = await Movimentacao.findAll({ where: { id_movimentacao: req.params.id }, raw: true });
+    res.status(200).send({ movimentacao: resultado });
+}));
 
-            if (error) return res.status(500).send({ error });
+router.post('/', asyncHandler(async (req, res) => {
+    const movimentacao = await Movimentacao.create(Object.fromEntries(
+        campos.map(campo => [campo, req.body[campo] === undefined ? null : req.body[campo]])
+    ));
+    res.status(201).send({ mensagem: "Movimentação criada com sucesso!", id_movimentacao: movimentacao.id_movimentacao });
+}));
 
-            res.status(200).send({ movimentacao: resultado });
-        });
-    });
-});
+router.patch('/:id', asyncHandler(async (req, res) => {
+    const values = Object.fromEntries(campos
+        .filter(campo => Object.prototype.hasOwnProperty.call(req.body, campo))
+        .map(campo => [campo, req.body[campo]]));
+    if (Object.keys(values).length === 0) {
+        return res.status(400).send({ mensagem: "Informe ao menos um campo válido para atualização." });
+    }
+    await Movimentacao.update(values, { where: { id_movimentacao: req.params.id } });
+    res.status(202).send({ mensagem: "Movimentação atualizada com sucesso!" });
+}));
 
-// BUSCAR MOVIMENTAÇÃO POR ID
-router.get('/:id', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error: error });
-
-        conn.query(
-            "SELECT * FROM movimentacoes WHERE id_movimentacao = ?",
-            [req.params.id],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error: error });
-
-                res.status(200).send({ movimentacao: resultado });
-            }
-        );
-    });
-});
-
-// CADASTRAR MOVIMENTAÇÃO
-router.post('/', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(
-            "INSERT INTO movimentacoes (id_produto, tipo, quantidade, data_movimentacao, observacao) VALUES (?, ?, ?, ?, ?)",
-            [
-                req.body.id_produto,
-                req.body.tipo,
-                req.body.quantidade,
-                req.body.data_movimentacao,
-                req.body.observacao
-            ],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(201).send({
-                    mensagem: "Movimentação criada com sucesso!",
-                    id_movimentacao: resultado.insertId
-                });
-            }
-        );
-    });
-});
-
-// ATUALIZAR MOVIMENTAÇÃO
-router.patch('/:id', (req, res, next) => {
-    const update = updateStatement(
-        'movimentacoes',
-        'id_movimentacao',
-        ['id_produto', 'tipo', 'quantidade', 'data_movimentacao', 'observacao'],
-        req.body,
-        req.params.id
-    );
-    if (!update) return res.status(400).send({ mensagem: "Informe ao menos um campo válido para atualização." });
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(update.sql, update.values,
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(202).send({
-                    mensagem: "Movimentação atualizada com sucesso!"
-                });
-            }
-        );
-    });
-});
-
-// REMOVER MOVIMENTAÇÃO
-router.delete('/:id', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(
-            "DELETE FROM movimentacoes WHERE id_movimentacao = ?",
-            [req.params.id],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(202).send({
-                    mensagem: "Movimentação removida com sucesso!"
-                });
-            }
-        );
-    });
-});
+router.delete('/:id', asyncHandler(async (req, res) => {
+    await Movimentacao.destroy({ where: { id_movimentacao: req.params.id } });
+    res.status(202).send({ mensagem: "Movimentação removida com sucesso!" });
+}));
 
 module.exports = router;

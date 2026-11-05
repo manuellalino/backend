@@ -1,110 +1,42 @@
 const express = require('express');
 const router = express.Router();
-const mysql = require("../mysql").pool;
-const updateStatement = require("./updateStatement");
+const { Pedido } = require('../models');
+const asyncHandler = require('./asyncHandler');
+const campos = ['status', 'data_pedido', 'id_cliente'];
 
-// LISTAR PEDIDOS
-router.get('/', (req, res) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
+router.get('/', asyncHandler(async (req, res) => {
+    const resultado = await Pedido.findAll({ raw: true });
+    res.status(200).send({ pedido: resultado });
+}));
 
-        conn.query("SELECT * FROM pedidos", (error, resultado) => {
-            conn.release();
+router.get('/:id', asyncHandler(async (req, res) => {
+    const resultado = await Pedido.findAll({ where: { id_pedido: req.params.id }, raw: true });
+    res.status(200).send({ pedido: resultado });
+}));
 
-            if (error) return res.status(500).send({ error });
-
-            res.status(200).send({ pedido: resultado });
-        });
+router.post('/', asyncHandler(async (req, res) => {
+    const pedido = await Pedido.create({
+        status: req.body.status,
+        data_pedido: req.body.data_pedido,
+        id_cliente: req.body.id_cliente
     });
-});
+    res.status(201).send({ mensagem: "Pedido criado com sucesso!", id_pedido: pedido.id_pedido });
+}));
 
-// BUSCAR PEDIDO POR ID
-router.get('/:id', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error: error });
+router.patch('/:id', asyncHandler(async (req, res) => {
+    const values = Object.fromEntries(campos
+        .filter(campo => Object.prototype.hasOwnProperty.call(req.body, campo))
+        .map(campo => [campo, req.body[campo]]));
+    if (Object.keys(values).length === 0) {
+        return res.status(400).send({ mensagem: "Informe ao menos um campo válido para atualização." });
+    }
+    await Pedido.update(values, { where: { id_pedido: req.params.id } });
+    res.status(202).send({ mensagem: "Pedido atualizado com sucesso!" });
+}));
 
-        conn.query(
-            "SELECT * FROM pedidos WHERE id_pedido = ?",
-            [req.params.id],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error: error });
-
-                res.status(200).send({ pedido: resultado });
-            }
-        );
-    });
-});
-
-// CADASTRAR PEDIDO
-router.post('/', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(
-            "INSERT INTO pedidos (status, data_pedido, id_cliente) VALUES (?, ?, ?)",
-
-            [
-                req.body.status,
-                req.body.data_pedido,
-                req.body.id_cliente
-            ],
-
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(201).send({
-                    mensagem: "Pedido criado com sucesso!",
-                    id_pedido: resultado.insertId
-                });
-            }
-        );
-    });
-});
-
-// ATUALIZAR PEDIDO
-router.patch('/:id', (req, res, next) => {
-    const update = updateStatement('pedidos', 'id_pedido', ['status', 'data_pedido', 'id_cliente'], req.body, req.params.id);
-    if (!update) return res.status(400).send({ mensagem: "Informe ao menos um campo válido para atualização." });
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(update.sql, update.values,
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(202).send({
-                    mensagem: "Pedido atualizado com sucesso!"
-                });
-            }
-        );
-    });
-});
-
-// REMOVER PEDIDO
-router.delete('/:id', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(
-            "DELETE FROM pedidos WHERE id_pedido = ?",
-            [req.params.id],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(202).send({
-                    mensagem: "Pedido removido com sucesso!"
-                });
-            }
-        );
-    });
-});
+router.delete('/:id', asyncHandler(async (req, res) => {
+    await Pedido.destroy({ where: { id_pedido: req.params.id } });
+    res.status(202).send({ mensagem: "Pedido removido com sucesso!" });
+}));
 
 module.exports = router;

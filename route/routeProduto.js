@@ -1,118 +1,44 @@
 const express = require('express');
 const router = express.Router();
-const mysql = require("../mysql").pool;
-const updateStatement = require("./updateStatement");
+const { Produto } = require('../models');
+const asyncHandler = require('./asyncHandler');
+const campos = ['nome', 'descricao', 'preco', 'imagem_produto', 'id_categoria'];
 
-// LISTAR PRODUTOS
-router.get('/', (req, res) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
+router.get('/', asyncHandler(async (req, res) => {
+    const resultado = await Produto.findAll({ raw: true });
+    res.status(200).send({ produto: resultado });
+}));
 
-        conn.query("SELECT * FROM produtos", (error, resultado) => {
-            conn.release();
+router.get('/:id', asyncHandler(async (req, res) => {
+    const resultado = await Produto.findAll({ where: { id_produto: req.params.id }, raw: true });
+    res.status(200).send({ produto: resultado });
+}));
 
-            if (error) return res.status(500).send({ error });
-
-            res.status(200).send({ produto: resultado });
-        });
+router.post('/', asyncHandler(async (req, res) => {
+    const produto = await Produto.create({
+        nome: req.body.nome,
+        descricao: req.body.descricao,
+        preco: req.body.preco,
+        imagem_produto: req.body.imagem_produto,
+        id_categoria: req.body.id_categoria
     });
-});
+    res.status(201).send({ mensagem: "Produto criado com sucesso!", id_produto: produto.id_produto });
+}));
 
-// BUSCAR PRODUTO POR ID
-router.get('/:id', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error: error });
+router.patch('/:id', asyncHandler(async (req, res) => {
+    const values = Object.fromEntries(campos
+        .filter(campo => Object.prototype.hasOwnProperty.call(req.body, campo))
+        .map(campo => [campo, req.body[campo]]));
+    if (Object.keys(values).length === 0) {
+        return res.status(400).send({ mensagem: "Informe ao menos um campo válido para atualização." });
+    }
+    await Produto.update(values, { where: { id_produto: req.params.id } });
+    res.status(202).send({ mensagem: "Produto atualizado com sucesso!" });
+}));
 
-        conn.query(
-            "SELECT * FROM produtos WHERE id_produto = ?",
-            [req.params.id],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error: error });
-
-                res.status(200).send({ produto: resultado });
-            }
-        );
-    });
-});
-
-// CADASTRAR PRODUTO
-router.post('/', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(
-            "INSERT INTO produtos (nome, descricao, preco, imagem_produto, id_categoria) VALUES (?, ?, ?, ?, ?)",
-
-            [
-                req.body.nome,
-                req.body.descricao,
-                req.body.preco,
-                req.body.imagem_produto,
-                req.body.id_categoria
-            ],
-
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(201).send({
-                    mensagem: "Produto criado com sucesso!",
-                    id_produto: resultado.insertId
-                });
-            }
-        );
-    });
-});
-
-// ATUALIZAR PRODUTO
-router.patch('/:id', (req, res, next) => {
-    const update = updateStatement(
-        'produtos',
-        'id_produto',
-        ['nome', 'descricao', 'preco', 'imagem_produto', 'id_categoria'],
-        req.body,
-        req.params.id
-    );
-    if (!update) return res.status(400).send({ mensagem: "Informe ao menos um campo válido para atualização." });
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(update.sql, update.values,
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(202).send({
-                    mensagem: "Produto atualizado com sucesso!"
-                });
-            }
-        );
-    });
-});
-
-// REMOVER PRODUTO
-router.delete('/:id', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(
-            "DELETE FROM produtos WHERE id_produto = ?",
-            [req.params.id],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(202).send({
-                    mensagem: "Produto removido com sucesso!"
-                });
-            }
-        );
-    });
-});
+router.delete('/:id', asyncHandler(async (req, res) => {
+    await Produto.destroy({ where: { id_produto: req.params.id } });
+    res.status(202).send({ mensagem: "Produto removido com sucesso!" });
+}));
 
 module.exports = router;

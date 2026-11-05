@@ -1,80 +1,83 @@
 const express = require('express');
 const router = express.Router();
-const mysql = require("../mysql").pool;
+const { Produto, Estoque } = require('../models');
+const asyncHandler = require('./asyncHandler');
 const campos = ['estoque_minimo', 'estoque_maximo', 'localizacao'];
 
-router.get('/', (req, res) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-        conn.query(
-            `SELECT e.id_estoque, p.id_produto,
-                    COALESCE(e.quantidade, 0) AS quantidade,
-                    COALESCE(e.estoque_minimo, 0) AS estoque_minimo,
-                    COALESCE(e.estoque_maximo, 0) AS estoque_maximo,
-                    e.localizacao, p.nome AS produto
-             FROM produtos p
-             LEFT JOIN estoque e ON e.id_produto = p.id_produto
-             ORDER BY p.nome`,
-            (error, resultado) => {
-                conn.release();
-                if (error) return res.status(500).send({ error });
-                res.status(200).send({ estoque: resultado });
-            }
-        );
+async function obterEstoque(idProduto) {
+    const produto = await Produto.findByPk(idProduto, {
+        attributes: ['id_produto', 'nome'],
+        include: [{
+            association: 'estoque',
+            attributes: ['id_estoque', 'quantidade', 'estoque_minimo', 'estoque_maximo', 'localizacao'],
+            required: false
+        }]
     });
-});
+    if (!produto) return null;
+    const estoque = produto.estoque;
+    return {
+        id_estoque: estoque ? estoque.id_estoque : null,
+        id_produto: produto.id_produto,
+        quantidade: estoque && estoque.quantidade !== null ? estoque.quantidade : 0,
+        estoque_minimo: estoque && estoque.estoque_minimo !== null ? estoque.estoque_minimo : 0,
+        estoque_maximo: estoque && estoque.estoque_maximo !== null ? estoque.estoque_maximo : 0,
+        localizacao: estoque ? estoque.localizacao : null,
+        produto: produto.nome
+    };
+}
 
-router.get('/:idProduto', (req, res) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-        conn.query(
-            `SELECT e.id_estoque, p.id_produto,
-                    COALESCE(e.quantidade, 0) AS quantidade,
-                    COALESCE(e.estoque_minimo, 0) AS estoque_minimo,
-                    COALESCE(e.estoque_maximo, 0) AS estoque_maximo,
-                    e.localizacao, p.nome AS produto
-             FROM produtos p
-             LEFT JOIN estoque e ON e.id_produto = p.id_produto
-             WHERE p.id_produto = ?`,
-            [req.params.idProduto],
-            (error, resultado) => {
-                conn.release();
-                if (error) return res.status(500).send({ error });
-                if (resultado.length === 0) return res.status(404).send({ mensagem: "Produto não encontrado." });
-                res.status(200).send({ estoque: resultado[0] });
-            }
-        );
+router.get('/', asyncHandler(async (req, res) => {
+    const produtos = await Produto.findAll({
+        attributes: ['id_produto', 'nome'],
+        include: [{
+            association: 'estoque',
+            attributes: ['id_estoque', 'quantidade', 'estoque_minimo', 'estoque_maximo', 'localizacao'],
+            required: false
+        }],
+        order: [['nome', 'ASC']]
     });
-});
+    const estoque = produtos.map(produto => {
+        const item = produto.get({ plain: true });
+        const quantidade = item.estoque;
+        return {
+            id_estoque: quantidade ? quantidade.id_estoque : null,
+            id_produto: item.id_produto,
+            quantidade: quantidade && quantidade.quantidade !== null ? quantidade.quantidade : 0,
+            estoque_minimo: quantidade && quantidade.estoque_minimo !== null ? quantidade.estoque_minimo : 0,
+            estoque_maximo: quantidade && quantidade.estoque_maximo !== null ? quantidade.estoque_maximo : 0,
+            localizacao: quantidade ? quantidade.localizacao : null,
+            produto: item.nome
+        };
+    });
+    res.status(200).send({ estoque });
+}));
 
-router.patch('/:idProduto', (req, res) => {
-    const atualizados = campos.filter(campo => Object.prototype.hasOwnProperty.call(req.body, campo));
-    if (atualizados.length === 0) {
+router.get('/:idProduto', asyncHandler(async (req, res) => {
+    const estoque = await obterEstoque(req.params.idProduto);
+    if (!estoque) return res.status(404).send({ mensagem: "Produto não encontrado." });
+    res.status(200).send({ estoque });
+}));
+
+router.patch('/:idProduto', asyncHandler(async (req, res) => {
+    const values = Object.fromEntries(campos
+        .filter(campo => Object.prototype.hasOwnProperty.call(req.body, campo))
+        .map(campo => [campo, req.body[campo]]));
+    if (Object.keys(values).length === 0) {
         return res.status(400).send({ mensagem: "Informe limites ou localização para atualizar; quantidade é gerenciada pelas entradas e saídas." });
     }
     for (const campo of ['estoque_minimo', 'estoque_maximo']) {
-        if (Object.prototype.hasOwnProperty.call(req.body, campo) &&
-            (!Number.isInteger(Number(req.body[campo])) || Number(req.body[campo]) < 0)) {
+        if (Object.prototype.hasOwnProperty.call(values, campo) &&
+            (!Number.isInteger(Number(values[campo])) || Number(values[campo]) < 0)) {
             return res.status(400).send({ mensagem: `${campo} deve ser um inteiro não negativo.` });
         }
     }
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-        const colunas = ['id_produto', ...atualizados];
-        const valores = [req.params.idProduto, ...atualizados.map(campo => req.body[campo])];
-        const atualizacoes = atualizados.map(campo => `${campo} = VALUES(${campo})`).join(', ');
-        const marcadores = colunas.map(() => '?').join(', ');
-        conn.query(
-            `INSERT INTO estoque (${colunas.join(', ')}) VALUES (${marcadores})
-             ON DUPLICATE KEY UPDATE ${atualizacoes}`,
-            valores,
-            (error) => {
-            conn.release();
-            if (error) return res.status(500).send({ error });
-            res.status(200).send({ mensagem: "Configurações de estoque atualizadas com sucesso!" });
-            }
-        );
+    await Estoque.upsert({
+        id_produto: req.params.idProduto,
+        ...values
+    }, {
+        updateOnDuplicate: Object.keys(values)
     });
-});
+    res.status(200).send({ mensagem: "Configurações de estoque atualizadas com sucesso!" });
+}));
 
 module.exports = router;

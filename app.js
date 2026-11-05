@@ -4,6 +4,27 @@ const morgan = require('morgan');
 const cors = require('cors');
 const app = express();
 const bodyParser = require('body-parser');
+const sequelize = require('./sequelize');
+
+const configuredOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean)
+  : null;
+
+if (process.env.NODE_ENV === 'production' && (!configuredOrigins || configuredOrigins.length === 0)) {
+  throw new Error('CORS_ORIGINS must contain the allowed frontend origins in production.');
+}
+
+if (process.env.NODE_ENV === 'production' && configuredOrigins.includes('*')) {
+  throw new Error('Wildcard CORS is not allowed in production; configure explicit frontend origins.');
+}
+
+const allowedOrigins = configuredOrigins || [
+  'http://localhost',
+  'http://localhost:8080',
+  'http://localhost:3000',
+  'http://localhost:5173'
+];
+
 app.use(morgan('dev'));
 app.use(bodyParser.urlencoded({extended:false}));
 app.use(bodyParser.json());
@@ -26,7 +47,9 @@ const routeHistoricoPreco = require('./route/routeHistoricoPreco')
 
 //2. Controle de CORS (Headers & OPTIONS)
 app.use(cors({
-  origin: '*',
+  origin: (origin, callback) => {
+    callback(null, !origin || allowedOrigins.includes(origin));
+  },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization']
 }));
@@ -52,6 +75,16 @@ app.get('/teste', (req, res) => {
     res.status(200).send({
         mensagem: 'Tudo OK'
     }); 
+});
+
+app.get('/health/ready', async (req, res) => {
+    try {
+        await sequelize.authenticate();
+        return res.status(200).send({ status: 'ok' });
+    } catch (error) {
+        console.error('Verificação de prontidão do banco falhou:', error);
+        return res.status(503).send({ status: 'unavailable' });
+    }
 });
 
 //4. Tratamento de Erros (Fallback & Handler)

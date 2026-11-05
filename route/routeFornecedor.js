@@ -1,120 +1,40 @@
 const express = require('express');
 const router = express.Router();
-const mysql = require("../mysql").pool;
-const updateStatement = require("./updateStatement");
+const { Fornecedor } = require('../models');
+const asyncHandler = require('./asyncHandler');
+const campos = ['nome', 'empresa', 'email', 'telefone', 'cidade', 'estado', 'ativo'];
 
-// LISTAR FORNECEDORES
-router.get('/', (req, res) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
+router.get('/', asyncHandler(async (req, res) => {
+    const resultado = await Fornecedor.findAll({ raw: true });
+    res.status(200).send({ fornecedor: resultado });
+}));
 
-        conn.query("SELECT * FROM fornecedores", (error, resultado) => {
-            conn.release();
+router.get('/:id', asyncHandler(async (req, res) => {
+    const resultado = await Fornecedor.findAll({ where: { id_fornecedor: req.params.id }, raw: true });
+    res.status(200).send({ fornecedor: resultado });
+}));
 
-            if (error) return res.status(500).send({ error });
+router.post('/', asyncHandler(async (req, res) => {
+    const fornecedor = await Fornecedor.create(Object.fromEntries(
+        campos.map(campo => [campo, req.body[campo] === undefined ? null : req.body[campo]])
+    ));
+    res.status(201).send({ mensagem: "Fornecedor criado com sucesso!", id_fornecedor: fornecedor.id_fornecedor });
+}));
 
-            res.status(200).send({ fornecedor: resultado });
-        });
-    });
-});
+router.patch('/:id', asyncHandler(async (req, res) => {
+    const values = Object.fromEntries(campos
+        .filter(campo => Object.prototype.hasOwnProperty.call(req.body, campo))
+        .map(campo => [campo, req.body[campo]]));
+    if (Object.keys(values).length === 0) {
+        return res.status(400).send({ mensagem: "Informe ao menos um campo válido para atualização." });
+    }
+    await Fornecedor.update(values, { where: { id_fornecedor: req.params.id } });
+    res.status(202).send({ mensagem: "Fornecedor atualizado com sucesso!" });
+}));
 
-// BUSCAR FORNECEDOR POR ID
-router.get('/:id', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error: error });
-
-        conn.query(
-            "SELECT * FROM fornecedores WHERE id_fornecedor = ?",
-            [req.params.id],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error: error });
-
-                res.status(200).send({ fornecedor: resultado });
-            }
-        );
-    });
-});
-
-// CADASTRAR FORNECEDOR
-router.post('/', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(
-            "INSERT INTO fornecedores (nome, empresa, email, telefone, cidade, estado, ativo) VALUES (?, ?, ?, ?, ?, ?, ?)",
-
-            [
-                req.body.nome,
-                req.body.empresa,
-                req.body.email,
-                req.body.telefone,
-                req.body.cidade,
-                req.body.estado,
-                req.body.ativo
-            ],
-
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(201).send({
-                    mensagem: "Fornecedor criado com sucesso!",
-                    id_fornecedor: resultado.insertId
-                });
-            }
-        );
-    });
-});
-
-// ATUALIZAR FORNECEDOR
-router.patch('/:id', (req, res, next) => {
-    const update = updateStatement(
-        'fornecedores',
-        'id_fornecedor',
-        ['nome', 'empresa', 'email', 'telefone', 'cidade', 'estado', 'ativo'],
-        req.body,
-        req.params.id
-    );
-    if (!update) return res.status(400).send({ mensagem: "Informe ao menos um campo válido para atualização." });
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(update.sql, update.values,
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(202).send({
-                    mensagem: "Fornecedor atualizado com sucesso!"
-                });
-            }
-        );
-    });
-});
-
-// REMOVER FORNECEDOR
-router.delete('/:id', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(
-            "DELETE FROM fornecedores WHERE id_fornecedor = ?",
-            [req.params.id],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(202).send({
-                    mensagem: "Fornecedor removido com sucesso!"
-                });
-            }
-        );
-    });
-});
+router.delete('/:id', asyncHandler(async (req, res) => {
+    await Fornecedor.destroy({ where: { id_fornecedor: req.params.id } });
+    res.status(202).send({ mensagem: "Fornecedor removido com sucesso!" });
+}));
 
 module.exports = router;

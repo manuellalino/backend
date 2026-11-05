@@ -1,117 +1,40 @@
 const express = require('express');
 const router = express.Router();
-const mysql = require("../mysql").pool;
-const updateStatement = require("./updateStatement");
+const { Saida } = require('../models');
+const asyncHandler = require('./asyncHandler');
+const campos = ['id_produto', 'id_funcionario', 'quantidade', 'valor_unitario', 'data_saida', 'destino'];
 
-// LISTAR SAÍDAS
-router.get('/', (req, res) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
+router.get('/', asyncHandler(async (req, res) => {
+    const resultado = await Saida.findAll({ raw: true });
+    res.status(200).send({ saida: resultado });
+}));
 
-        conn.query("SELECT * FROM saidas", (error, resultado) => {
-            conn.release();
+router.get('/:id', asyncHandler(async (req, res) => {
+    const resultado = await Saida.findAll({ where: { id_saida: req.params.id }, raw: true });
+    res.status(200).send({ saida: resultado });
+}));
 
-            if (error) return res.status(500).send({ error });
+router.post('/', asyncHandler(async (req, res) => {
+    const saida = await Saida.create(Object.fromEntries(
+        campos.map(campo => [campo, req.body[campo] === undefined ? null : req.body[campo]])
+    ));
+    res.status(201).send({ mensagem: "Saída criada com sucesso!", id_saida: saida.id_saida });
+}));
 
-            res.status(200).send({ saida: resultado });
-        });
-    });
-});
+router.patch('/:id', asyncHandler(async (req, res) => {
+    const values = Object.fromEntries(campos
+        .filter(campo => Object.prototype.hasOwnProperty.call(req.body, campo))
+        .map(campo => [campo, req.body[campo]]));
+    if (Object.keys(values).length === 0) {
+        return res.status(400).send({ mensagem: "Informe ao menos um campo válido para atualização." });
+    }
+    await Saida.update(values, { where: { id_saida: req.params.id } });
+    res.status(202).send({ mensagem: "Saída atualizada com sucesso!" });
+}));
 
-// BUSCAR SAÍDA POR ID
-router.get('/:id', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error: error });
-
-        conn.query(
-            "SELECT * FROM saidas WHERE id_saida = ?",
-            [req.params.id],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error: error });
-
-                res.status(200).send({ saida: resultado });
-            }
-        );
-    });
-});
-
-// CADASTRAR SAÍDA
-router.post('/', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(
-            "INSERT INTO saidas (id_produto, id_funcionario, quantidade, valor_unitario, data_saida, destino) VALUES (?, ?, ?, ?, ?, ?)",
-            [
-                req.body.id_produto,
-                req.body.id_funcionario,
-                req.body.quantidade,
-                req.body.valor_unitario,
-                req.body.data_saida,
-                req.body.destino
-            ],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(201).send({
-                    mensagem: "Saída criada com sucesso!",
-                    id_saida: resultado.insertId
-                });
-            }
-        );
-    });
-});
-
-// ATUALIZAR SAÍDA
-router.patch('/:id', (req, res, next) => {
-    const update = updateStatement(
-        'saidas',
-        'id_saida',
-        ['id_produto', 'id_funcionario', 'quantidade', 'valor_unitario', 'data_saida', 'destino'],
-        req.body,
-        req.params.id
-    );
-    if (!update) return res.status(400).send({ mensagem: "Informe ao menos um campo válido para atualização." });
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(update.sql, update.values,
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(202).send({
-                    mensagem: "Saída atualizada com sucesso!"
-                });
-            }
-        );
-    });
-});
-
-// REMOVER SAÍDA
-router.delete('/:id', (req, res, next) => {
-    mysql.getConnection((error, conn) => {
-        if (error) return res.status(500).send({ error });
-
-        conn.query(
-            "DELETE FROM saidas WHERE id_saida = ?",
-            [req.params.id],
-            (error, resultado) => {
-                conn.release();
-
-                if (error) return res.status(500).send({ error });
-
-                res.status(202).send({
-                    mensagem: "Saída removida com sucesso!"
-                });
-            }
-        );
-    });
-});
+router.delete('/:id', asyncHandler(async (req, res) => {
+    await Saida.destroy({ where: { id_saida: req.params.id } });
+    res.status(202).send({ mensagem: "Saída removida com sucesso!" });
+}));
 
 module.exports = router;
